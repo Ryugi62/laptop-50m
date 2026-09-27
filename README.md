@@ -132,3 +132,6 @@ AI coding assistants are allowed in this hackathon, and we disclose our use in f
 
 Code: MIT. Data: FineWeb-Edu (ODC-By 1.0), WikiText-103 (CC BY-SA 3.0, evaluation only).
 Evaluation: EleutherAI lm-evaluation-harness (MIT).
+
+## Weights
+Final checkpoint (step 9000, fp32 state_dict, SHA-256 `930c08d5…70ea`) and tokenizer: https://github.com/Ryugi62/laptop-50m/releases/tag/v1.0-step9000
