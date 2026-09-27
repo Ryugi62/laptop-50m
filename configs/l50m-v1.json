@@ -1,0 +1,13 @@
+{
+ "model": {
+  "vocab_size": 16384,
+  "d_model": 512,
+  "n_layer": 12,
+  "n_head": 8,
+  "ffn_hidden": 1536,
+  "max_seq_len": 512,
+  "rope_theta": 10000.0,
+  "tie_embeddings": true
+ },
+ "params": 49295872
+}

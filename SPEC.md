@@ -41,6 +41,17 @@ BPE vocab 16,384 (byte-level). Budget goes to depth instead of a large vocabular
 - AC-7 Given a uint16 token file, When `TokenShard.batch` samples, Then x and y are (B, T) int64 and y == x shifted by one.
 - AC-8 Given ioreg output text, When `parse_hid_idle_seconds` parses it, Then it returns seconds as int.
 - AC-9 Given a checkpoint saved at step k, When training resumes, Then it continues from step k with the same optimizer state.
+- AC-10 Given a run config JSON, When `python count_params.py --config <json>` runs, Then it prints the total trainable parameter count of the instantiated torch model (tied weights counted once) and whether it is <= 50,000,000; exit code 1 if over.
+- AC-11 Given a (context, continuation) token pair, When `Laptop50MLM._loglikelihood_tokens` scores it, Then the log-likelihood equals the sum of log-softmax of the continuation tokens from one causal forward pass, and `is_greedy` is True iff every continuation token is the argmax; an empty context is conditioned on `<|endoftext|>`.
+- AC-12 Given several requests, When scored with batch size 1 and batch size 3, Then results agree within 1e-4 (right padding is invisible to scored positions).
+- AC-13 Given a context longer than `max_length`, When scored, Then only the last `max_length + 1` tokens of context+continuation are used (left truncation), without error.
+- AC-14 Given a text, When `loglikelihood_rolling` runs, Then every token is scored exactly once in disjoint windows of `max_length` (lm-eval `get_rolling_token_windows`, context_len=1, EOT prefix).
+- AC-15 Given a token stream, When `sliding_window_nll(window, stride)` runs, Then every token after the first is scored exactly once, the result equals one full forward pass when the stream fits one window, and batching windows does not change the result.
+
+## §5b Evaluation (Track 01 rules)
+- `python -m laptop50m.infrastructure.eval_cli` = lm-evaluation-harness 0-shot `hellaswag`, `arc_easy`, `piqa`, `winogrande` (acc, acc_norm, full sets)
+  + `wikitext103` (local task = lm-eval `wikitext` on the `wikitext-103-raw-v1` document-level test split: word/byte perplexity, bits/byte)
+  + token-level sliding-window perplexity (window 512, stride 256) on the WikiText-103 test/validation token streams. Output `results/eval_l50m-v1.json`.
 
 ## §6 Layers
 `domain/` (pure python: config, schedule) <- `application/` (training loop over ports) <- `adapters/` (torch model, memmap data) <- `infrastructure/` (CLI, tokenizer training, idle gate). No reverse imports.

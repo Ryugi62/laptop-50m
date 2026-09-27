@@ -1,0 +1,112 @@
+{
+ "checkpoint": {
+  "path": "runs/l50m-v1/ckpt.pt",
+  "step": 9000,
+  "tokens_seen": 294912000,
+  "params": 49295872
+ },
+ "lm_eval": {
+  "version": "0.4.13",
+  "num_fewshot": 0,
+  "limit": null,
+  "results": {
+   "hellaswag": {
+    "name": "hellaswag",
+    "alias": "hellaswag",
+    "sample_len": 10042,
+    "acc,none": 0.2650866361282613,
+    "acc_stderr,none": 0.004404772735766014,
+    "acc_norm,none": 0.2729535949014141,
+    "acc_norm_stderr,none": 0.004445667638734141
+   },
+   "arc_easy": {
+    "name": "arc_easy",
+    "alias": "arc_easy",
+    "sample_len": 2376,
+    "acc,none": 0.3947811447811448,
+    "acc_stderr,none": 0.010030038935883596,
+    "acc_norm,none": 0.3602693602693603,
+    "acc_norm_stderr,none": 0.00985100258473238
+   },
+   "piqa": {
+    "name": "piqa",
+    "alias": "piqa",
+    "sample_len": 1838,
+    "acc,none": 0.5674646354733406,
+    "acc_stderr,none": 0.011559142916063143,
+    "acc_norm,none": 0.5560391730141458,
+    "acc_norm_stderr,none": 0.011592322161277828
+   },
+   "winogrande": {
+    "name": "winogrande",
+    "alias": "winogrande",
+    "sample_len": 1267,
+    "acc,none": 0.5067087608524072,
+    "acc_stderr,none": 0.014051220692330352
+   },
+   "wikitext103": {
+    "name": "wikitext103",
+    "alias": "wikitext103",
+    "sample_len": 62,
+    "word_perplexity,none": 105.02902002291506,
+    "word_perplexity_stderr,none": "N/A",
+    "byte_perplexity,none": 2.3877834931366424,
+    "byte_perplexity_stderr,none": "N/A",
+    "bits_per_byte,none": 1.2556720294257397,
+    "bits_per_byte_stderr,none": "N/A"
+   }
+  },
+  "n_samples": {
+   "hellaswag": {
+    "original": 10042,
+    "effective": 10042
+   },
+   "arc_easy": {
+    "original": 2376,
+    "effective": 2376
+   },
+   "piqa": {
+    "original": 1838,
+    "effective": 1838
+   },
+   "winogrande": {
+    "original": 1267,
+    "effective": 1267
+   },
+   "wikitext103": {
+    "original": 62,
+    "effective": 62
+   }
+  },
+  "versions": {
+   "arc_easy": 1.0,
+   "hellaswag": 1.0,
+   "piqa": 1.0,
+   "wikitext103": 2.0,
+   "winogrande": 1.0
+  }
+ },
+ "token_ppl": {
+  "wikitext103_test": {
+   "tokens": 316293,
+   "nll_per_token": 3.829633430145454,
+   "ppl_per_token": 46.04565619068711,
+   "window": 512,
+   "stride": 256
+  },
+  "wikitext103_validation": {
+   "tokens": 276394,
+   "nll_per_token": 3.88689955445524,
+   "ppl_per_token": 48.75947582512166,
+   "window": 512,
+   "stride": 256
+  }
+ },
+ "env": {
+  "device": "mps",
+  "torch": "2.8.0",
+  "python": "3.11.16",
+  "machine": "arm64",
+  "eval_wall_s": 534.9
+ }
+}
