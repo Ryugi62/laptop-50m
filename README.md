@@ -29,7 +29,7 @@ and all compute ran locally at zero cost. Everything in this README can be repro
 Raw output: [`results/eval_l50m-v1.json`](results/eval_l50m-v1.json) (evaluation wall-clock: 535 s on the same M3 GPU).
 
 Notes on the metrics:
-- **WikiText-103 perplexity is out-of-domain.** No WikiText text was used for training. The lm-eval `wikitext103` task in
+- **WikiText-103 perplexity is out-of-domain.** The WikiText dataset was not used for training (FineWeb-Edu is a web crawl and was not deduplicated against WikiText). The lm-eval `wikitext103` task in
   [`eval_tasks/`](eval_tasks/wikitext103) is lm-eval's built-in `wikitext` task (same detokenizer and metrics) pointed at
   the `wikitext-103-raw-v1` config. WikiText-2 and WikiText-103 share the same test articles.
 - **Word and byte perplexity do not depend on the tokenizer**, so they are the numbers to compare across models.
@@ -85,6 +85,17 @@ TOTAL trainable parameters: 49,295,872 <= 50,000,000: True
   releases the MPS cache (`infrastructure/pacer.py`). When the user is idle, training runs at full speed (≈ 4,000 tok/s).
 - Everything runs under `nice 20`. This is why the wall-clock (39.6 h) is about twice the full-speed compute time (≈ 20.5 h).
 - An earlier try with fp32 and batch 8 × 1024 used 14.3 GB and swapped (101–211 tok/s), so it was rejected in favour of bf16 at 4 × 512 (≈ 3,000–4,000 tok/s, 4.7 GB).
+
+## Quick check with the released weights (no training, CPU, about 1 minute)
+
+```sh
+gh release download v1.0-step9000 -R Ryugi62/laptop-50m     # laptop50m-step9000.pt + tokenizer.json
+.venv/bin/python -m laptop50m.infrastructure.eval_cli --ckpt laptop50m-step9000.pt \
+    --tokenizer tokenizer.json --tasks arc_easy,piqa --device cpu --out results_check
+```
+
+On 2026-09-28 this printed ARC-Easy acc 0.39478 and PIQA acc 0.56746 in 70 s on the M3 CPU, the same values as the
+table above (measured on the MPS GPU from the training checkpoint).
 
 ## Reproduce
 
