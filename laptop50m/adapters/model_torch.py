@@ -40,6 +40,7 @@ class Block(nn.Module):
     def __init__(self, c: ModelConfig):
         super().__init__()
         self.n_head = c.n_head
+        self.qk_norm = getattr(c, "qk_norm", False)
         self.hd = c.d_model // c.n_head
         self.norm1 = RMSNorm(c.d_model)
         self.qkv = nn.Linear(c.d_model, 3 * c.d_model, bias=False)
@@ -55,6 +56,9 @@ class Block(nn.Module):
         q = q.view(B, T, self.n_head, self.hd).transpose(1, 2)
         k = k.view(B, T, self.n_head, self.hd).transpose(1, 2)
         v = v.view(B, T, self.n_head, self.hd).transpose(1, 2)
+        if self.qk_norm:
+            q = q * torch.rsqrt(q.float().pow(2).mean(-1, keepdim=True) + 1e-6).to(q.dtype)
+            k = k * torch.rsqrt(k.float().pow(2).mean(-1, keepdim=True) + 1e-6).to(k.dtype)
         q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
         y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         x = x + self.proj(y.transpose(1, 2).contiguous().view(B, T, C))

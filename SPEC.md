@@ -58,3 +58,26 @@ BPE vocab 16,384 (byte-level). Budget goes to depth instead of a large vocabular
 
 ## §7 Data
 FineWeb-Edu `sample/10BT` shard 000 (ODC-By 1.0), WikiText-103 validation/test (CC BY-SA 3.0) for held-out perplexity only.
+
+## §8 v2 — more tokens on free-tier GPU (added 2026-09-28)
+Purpose: raise axes 1-2 (Perplexity & Accuracy, Reasoning) by training the same <=50M architecture on
+10x more tokens with a more compute-efficient optimizer, on free cloud GPUs (Colab / Kaggle T4, no spend).
+Success (numbers): HellaSwag acc_norm >= 29, ARC-Easy acc >= 45, PIQA acc >= 60 (0-shot, full sets), WikiText-103
+word ppl < 80, params <= 50,000,000, cloud spend $0. Non-goals: pretrained weights, distillation, synthetic LLM data.
+
+Ubiquitous language (v2):
+| term | meaning | code |
+|---|---|---|
+| Muon | momentum + Newton-Schulz orthogonalised update for 2-D hidden matrices | `laptop50m.adapters.muon.Muon` |
+| QK-norm | RMS-normalise per-head queries and keys before RoPE (no parameters) | `ModelConfig.qk_norm` |
+| multi-shard | several uint16 token files sampled in proportion to length | `laptop50m.adapters.data.MultiShard` |
+| anneal mix | during LR decay, a fraction of rows come from the high-quality (int_score >= 4) shard | `TrainConfig.anneal_bins/anneal_frac` |
+| decontamination | drop training docs sharing a word 13-gram with WikiText-103 val/test | `laptop50m.domain.decontam` |
+
+- AC-16 Given `qk_norm=True`, When the model is built, Then the trainable parameter count equals `analytic_param_count` (QK-norm adds none) and forward is finite.
+- AC-17 Given a 2-D matrix G, When `newton_schulz(G)` runs 5 steps, Then >= 90% of the singular values of the result lie in [0.5, 1.5] and none exceeds 1.5 (approximately orthogonal; near-zero singular values of a random square matrix stay small after 5 steps), for both tall and wide G, and a (3, d, d) stack is orthogonalised per slice.
+- AC-18 Given a toy regression, When Muon + AdamW (hybrid) train for 50 steps, Then the loss decreases by >= 50%; Muon only receives 2-D block matrices; embedding and norms go to AdamW.
+- AC-19 Given two token files of lengths 1:3, When `MultiShard.batch` samples many windows, Then about 25% come from the first (±5%), and x/y are shifted by one.
+- AC-20 Given a word-13-gram index of reference texts, When `is_contaminated(doc)` runs, Then a doc containing a 13-word span of the reference (case/punctuation-insensitive) is flagged and an unrelated doc is not.
+- AC-21 Given `anneal_frac=f` and a run in its decay phase, When batches are drawn, Then rows come from the anneal shard with fraction f; before the decay phase, 0.
+- AC-22 Given `optimizer="muon"` and fp16 with a GradScaler on CPU-emulated settings, When training resumes from a checkpoint, Then both optimizers' states are restored and training continues to max_steps (extends AC-9).

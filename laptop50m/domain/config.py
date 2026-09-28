@@ -16,6 +16,7 @@ class ModelConfig:
     max_seq_len: int = 1_024
     rope_theta: float = 10_000.0
     tie_embeddings: bool = True
+    qk_norm: bool = False  # v2: RMS-normalise q,k per head (no parameters)
 
     def to_dict(self) -> dict:
         return asdict(self)
