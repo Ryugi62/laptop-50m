@@ -40,3 +40,16 @@ if [ "${PIPESTATUS[0]}" -ne 0 ]; then
   echo "[run_v2] compile run failed -> eager" | tee -a "$OUT/stdout.log"
   $RUN $ARGS 2>&1 | tee -a "$OUT/stdout.log"
 fi
+
+# evaluation on the same GPU once training reached its token target (re-running this script after the run = eval only)
+if python - "$OUT/ckpt.pt" <<'PY'
+import sys, torch
+ck = torch.load(sys.argv[1], map_location="cpu", weights_only=False)
+tc = ck["train_config"]; sys.exit(0 if ck["step"] >= tc["max_steps"] else 1)
+PY
+then
+  [ -s "$OUT/results/eval_l50m-v2.json" ] && { echo "[run_v2] eval exists"; exit 0; }
+  python -c "import lm_eval" 2>/dev/null || pip -q install lm-eval==0.4.13
+  python -m laptop50m.infrastructure.eval_cli --ckpt "$OUT/ckpt.pt" --tokenizer "$DATA/tok/tokenizer.json" \
+    --tok-dir "$DATA/tok" --out "$OUT/results" --device cuda --seq-len 1024 --batch-size 64 --name l50m-v2 2>&1 | tee -a "$OUT/stdout.log"
+fi

@@ -55,6 +55,7 @@ def main():
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--seq-len", type=int, default=512)
     ap.add_argument("--limit", type=float, default=None, help="subset per task (debug only)")
+    ap.add_argument("--name", default="l50m-v1", help="results file suffix")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     t0 = time.time()
@@ -85,7 +86,7 @@ def main():
         "env": {"device": a.device, "torch": torch.__version__, "python": platform.python_version(),
                 "machine": platform.machine(), "eval_wall_s": round(time.time() - t0, 1)},
     }
-    out = os.path.join(a.out, "eval_l50m-v1.json")
+    out = os.path.join(a.out, f"eval_{a.name}.json")
     json.dump(summary, open(out, "w"), indent=1, default=str)
     print(f"[eval] wrote {out} in {summary['env']['eval_wall_s']} s", flush=True)
     for k, v in res["results"].items():
