@@ -16,7 +16,10 @@ done
 # token shards: released pre-tokenized copy if present, otherwise tokenize here from the Hugging Face parquet
 HF=https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu/resolve/main/sample/10BT
 WT=https://huggingface.co/datasets/Salesforce/wikitext/resolve/main/wikitext-103-raw-v1
-for spec in train_000 train_001 hq_002 hq_003; do
+SPECS=""
+for i in ${MAIN_IDS:-000 001}; do SPECS="$SPECS train_$i"; done
+for i in ${HQ_IDS:-002 003}; do SPECS="$SPECS hq_$i"; done
+for spec in $SPECS; do
   f=$spec.bin; id=${spec#*_}; kind=${spec%_*}
   [ -s "$DATA/tok2/$f" ] && continue
   curl -sSfL --retry 3 -o "$DATA/tok2/$f" "$REL/$f" && continue
@@ -27,6 +30,7 @@ for spec in train_000 train_001 hq_002 hq_003; do
   python -m laptop50m.infrastructure.prepare_v2 --raw "$DATA/raw" --out "$DATA/tok2" --tokenizer "$DATA/tok/tokenizer.json" --main "$M" --hq "$H" --workers "$(nproc)" | tee -a "$OUT/stdout.log"
   rm -f "$DATA/raw/fineweb_edu_$id.parquet"
 done
+[ -n "${PREP_ONLY:-}" ] && { echo "[run_v2] data ready"; ls -la "$DATA/tok2"; exit 0; }
 nvidia-smi --query-gpu=name,memory.total --format=csv | tee -a "$OUT/stdout.log"
 ARGS="--data $DATA/tok2 --val-dir $DATA/tok --out $OUT --tokens $TOKENS ${EXTRA:-}"
 if [ "$NPROC" -gt 1 ]; then RUN="torchrun --standalone --nproc_per_node $NPROC -m laptop50m.infrastructure.train_cloud"; else RUN="python -m laptop50m.infrastructure.train_cloud"; fi
