@@ -45,13 +45,22 @@ def main(argv=None):
     ap.add_argument("--compile", action="store_true")
     ap.add_argument("--max-hours", type=float, default=11.5)
     ap.add_argument("--ckpt-every", type=int, default=900)
+    ap.add_argument("--device", default="auto", help="auto = cuda > mps > cpu")
+    ap.add_argument("--init-from", default="", help="weights-only checkpoint to continue from (e.g. v1 step 9000)")
+    ap.add_argument("--no-qk-norm", action="store_true", help="needed when continuing a v1 (no QK-norm) model")
+    ap.add_argument("--pace", action="store_true", help="local Mac: idle gate + 25%% duty while the user is active")
     a = ap.parse_args(argv)
     world = int(os.environ.get("WORLD_SIZE", "1"))
+    device = a.device
+    if device == "auto":
+        device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
     dtype = a.dtype
     if dtype == "auto":
-        dtype = "bf16" if (torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-                           and torch.cuda.get_device_capability()[0] >= 8) else "fp16"
-    mc = ModelConfig(max_seq_len=a.seq, qk_norm=True)
+        if device == "cuda":
+            dtype = "bf16" if (torch.cuda.is_bf16_supported() and torch.cuda.get_device_capability()[0] >= 8) else "fp16"
+        else:
+            dtype = "bf16" if device == "mps" else "fp32"
+    mc = ModelConfig(max_seq_len=a.seq, qk_norm=not a.no_qk_norm)
     n = check_budget(mc)
     p = plan(a.tokens, a.global_batch, a.micro, a.seq, world)
     train_bins = sorted(glob.glob(os.path.join(a.data, "train_*.bin")))
@@ -62,18 +71,32 @@ def main(argv=None):
                      max_steps=p["max_steps"], warmup=max(1, int(p["max_steps"] * a.warmup_frac)),
                      decay_frac=a.decay_frac, max_lr=a.adam_lr, min_lr=0.0, eval_every=250, eval_batches=20,
                      log_every=10, ckpt_every_sec=a.ckpt_every, max_hours=a.max_hours,
-                     device="cuda" if torch.cuda.is_available() else "cpu", dtype=dtype,
+                     device=device, dtype=dtype,
                      extra_val={"wikitext103_val": os.path.join(a.val_dir, "wikitext103_validation.bin")},
                      optimizer="muon", muon_lr=a.muon_lr, anneal_bins=hq_bins or None,
                      anneal_frac=a.anneal_frac if hq_bins else 0.0, compile=a.compile)
     if int(os.environ.get("RANK", "0")) == 0:
         os.makedirs(a.out, exist_ok=True)
         gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
-        meta = {"model": mc.to_dict(), "params": n, "plan": p, "dtype": dtype, "gpu": gpu, "world": world,
+        meta = {"model": mc.to_dict(), "params": n, "plan": p, "dtype": dtype, "gpu": gpu, "device": device, "init_from": a.init_from, "world": world,
                 "train_bins": train_bins, "hq_bins": hq_bins, "torch": torch.__version__}
         json.dump(meta, open(os.path.join(a.out, "config.json"), "w"), indent=1)
         print(f"[train_cloud] {json.dumps(meta)}", flush=True)
-    res = train(mc, tc, GPT, MultiShard.from_path, log=lambda m: print(m, flush=True))
+    factory = GPT
+    if a.init_from:
+        def factory(c, _src=a.init_from):
+            m = GPT(c)
+            ck = torch.load(_src, map_location="cpu", weights_only=False)
+            m.load_state_dict(ck["model"] if "model" in ck else ck)
+            return m
+    pacer = None
+    if a.pace:
+        from laptop50m.infrastructure.idle_gate import hid_idle_seconds, wait_until_idle
+        from laptop50m.infrastructure.pacer import IdlePacer
+        wait_until_idle(120, log=lambda m: print(m, flush=True))
+        release = torch.mps.empty_cache if device == "mps" else None
+        pacer = IdlePacer(hid_idle_seconds, threshold=120, on_active=release)
+    res = train(mc, tc, factory, MultiShard.from_path, log=lambda m: print(m, flush=True), pace=pacer)
     print(f"[train_cloud] finished {res}", flush=True)
     return res
 

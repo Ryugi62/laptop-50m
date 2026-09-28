@@ -136,3 +136,31 @@ def test_train_cloud_cpu_smoke(tmp_path):
         tcmod.ModelConfig = orig
     assert res["step"] == 4
     assert (tmp_path / "o" / "ckpt.pt").exists()
+
+
+def test_train_cloud_init_from_v1(tmp_path):
+    """Continuing a v1 (no QK-norm) checkpoint loads its weights before the first step."""
+    from laptop50m.infrastructure.train_cloud import main
+    import laptop50m.infrastructure.train_cloud as tcmod
+    d, v = tmp_path / "d", tmp_path / "v"
+    d.mkdir(); v.mkdir()
+    (np.arange(20000) % 16000).astype(np.uint16).tofile(d / "train_000.bin")
+    for n in ("fineweb_val", "wikitext103_validation"):
+        (np.arange(3000) % 300).astype(np.uint16).tofile(v / f"{n}.bin")
+    orig = tcmod.ModelConfig
+    small = lambda **kw: orig(vocab_size=16384, d_model=32, n_layer=1, n_head=2, ffn_hidden=64, **kw)
+    src = GPT(small(max_seq_len=64, qk_norm=False))
+    torch.save({"model": src.state_dict()}, tmp_path / "v1.pt")
+    tcmod.ModelConfig = small
+    try:
+        res = main(["--data", str(d), "--val-dir", str(v), "--out", str(tmp_path / "o"), "--tokens", "1024",
+                    "--global-batch", "1024", "--micro", "2", "--seq", "64", "--dtype", "fp32", "--device", "cpu",
+                    "--init-from", str(tmp_path / "v1.pt"), "--no-qk-norm", "--ckpt-every", "0"])
+    finally:
+        tcmod.ModelConfig = orig
+    assert res["step"] == 1
+    ck = torch.load(tmp_path / "o" / "ckpt.pt", map_location="cpu", weights_only=False)
+    w0 = src.state_dict()["blocks.0.qkv.weight"]
+    w1 = ck["model"]["blocks.0.qkv.weight"]
+    assert (w1 - w0).abs().max() < 0.02  # one small step away from the source weights, not a fresh init
+    assert ck["model_config"]["qk_norm"] is False
