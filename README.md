@@ -139,6 +139,11 @@ AI coding assistants are allowed in this hackathon, and we disclose our use in f
 - All numbers in this README are copied from script output (`results/eval_l50m-v1.json`, `runs/l50m-v1/train_log.jsonl`,
   `count_params.py`).
 
+## Research prototype
+
+Laptop-50M is a research prototype. It is not a medical device, not a diagnostic tool, and not financial advice.
+Its outputs can be wrong and must not be used for any decision.
+
 ## Licenses
 
 Code: MIT. Data: FineWeb-Edu (ODC-By 1.0), WikiText-103 (CC BY-SA 3.0, evaluation only).
