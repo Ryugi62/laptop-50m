@@ -34,3 +34,19 @@ def check_budget(c: ModelConfig) -> int:
     if n > PARAM_BUDGET:
         raise ValueError(f"{n:,} params > budget {PARAM_BUDGET:,}")
     return n
+
+
+def layers_for_budget(vocab_size: int, d_model: int, n_head: int, ffn_hidden: int, budget: int) -> ModelConfig:
+    """Deepest tied-embedding config with the given width that fits `budget` (embedding counted, as in the rule)."""
+    n = 0
+    while analytic_param_count(ModelConfig(vocab_size, d_model, n + 1, n_head, ffn_hidden)) <= budget:
+        n += 1
+    if n == 0:
+        raise ValueError(f"vocab {vocab_size} x d {d_model} leaves no room for a block under {budget:,}")
+    return ModelConfig(vocab_size, d_model, n, n_head, ffn_hidden)
+
+
+def bits_per_byte(total_nll_nats: float, n_bytes: int) -> float:
+    """Tokenizer-independent loss: total negative log-likelihood of a text (nats) per UTF-8 byte, in bits."""
+    import math
+    return total_nll_nats / (n_bytes * math.log(2))
