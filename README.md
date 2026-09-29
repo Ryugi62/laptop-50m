@@ -4,6 +4,10 @@ A 49.3M-parameter language model trained **from scratch on one Apple M3 iMac** (
 GIBC V2 Track 01 (TECH: ≤ 50M parameters). The model trained in the background while the machine was in daily use,
 and all compute ran locally at zero cost. Everything in this README can be reproduced with the scripts in this repository.
 
+**In one line:** evaluated with the same lm-evaluation-harness tasks on the same Mac, Laptop-50M is within 0.1 point of
+EleutherAI's Pythia-70M on HellaSwag and 1.9 points higher on ARC-Easy, after about **1/1,450 of Pythia-70M's training
+compute** (1/1,017 of its tokens). It is behind on PIQA, WinoGrande and WikiText perplexity. See [the comparison](#same-harness-same-mac-pythia-70m-as-a-reference-point).
+
 | | |
 |---|---|
 | Total trainable parameters | **49,295,872**, including the token embedding and the output head (tied) — `python count_params.py` |
@@ -12,6 +16,7 @@ and all compute ran locally at zero cost. Everything in this README can be repro
 | Training time | **39.6 h wall-clock** (process time incl. pausing for the user), **≈ 20.5 h at full speed** (294.9M tok / 3,995 tok/s median) |
 | Compute | 6·N·D = 6 × 49.3M × 294.9M ≈ **8.7 × 10¹⁶ FLOPs** (non-embedding N: 7.2 × 10¹⁶) |
 | Peak memory | ≈ 4.7 GB (batch 4 × 512, bf16) |
+| Inference | 197 MB of fp32 weights; ≈ 31–38 new tokens/s on the M3 CPU without a KV cache (`generate_cli`, below) |
 
 ## Results (0-shot, lm-evaluation-harness 0.4.13, full evaluation sets)
 
@@ -27,6 +32,28 @@ and all compute ran locally at zero cost. Everything in this README can be repro
 | WikiText-103 validation, token-level (276,394 tokens) | perplexity per token (window 512, stride 256) | 48.76 | — | — |
 
 Raw output: [`results/eval_l50m-v1.json`](results/eval_l50m-v1.json) (evaluation wall-clock: 535 s on the same M3 GPU).
+
+## Same harness, same Mac: Pythia-70M as a reference point
+
+To give the numbers above a scale, we ran EleutherAI **Pythia-70M** (final checkpoint `step143000`) through the same
+lm-evaluation-harness 0.4.13 tasks, 0-shot, on the same iMac (CPU, context capped at 512 like ours):
+[`baselines/run_pythia70m.sh`](baselines/run_pythia70m.sh) → [`results/baselines/pythia-70m.json`](results/baselines/pythia-70m.json).
+Pythia-70M is only a measuring stick here. It is not used anywhere in our training, data or tokenizer.
+
+| | **Laptop-50M** | Pythia-70M (reference) |
+|---|---|---|
+| Parameters (incl. embeddings) | **49,295,872** (tied head) | 70,426,624 (untied head, 50k vocabulary) |
+| Training tokens | **294.9M** (FineWeb-Edu) | 299.9B (the Pile: 143,000 steps × 2,097,152 tokens) |
+| Training compute, 6·N·D | **8.7 × 10¹⁶ FLOPs** (one M3 iMac) | 1.27 × 10²⁰ FLOPs (≈ 1,450× more) |
+| HellaSwag acc_norm | **27.30** ± 0.44 | 27.38 ± 0.45 |
+| ARC-Easy acc | **39.48** ± 1.00 | 37.54 ± 0.99 |
+| PIQA acc | 56.75 ± 1.16 | **59.85** ± 1.14 |
+| WinoGrande acc | 50.67 ± 1.41 | **52.88** ± 1.40 |
+| WikiText-103 word perplexity / bits per byte | 105.03 / 1.256 | **68.89 / 1.142** |
+
+What this shows and what it does not: with about 1/1,450 of the compute, the small-vocabulary, deeper design reaches the
+same HellaSwag and a higher ARC-Easy score. Pythia is ahead on PIQA and WinoGrande, and clearly ahead on WikiText, whose
+articles come from Wikipedia, which is part of the Pile; our training data is FineWeb-Edu only. This is one run of each model.
 
 Notes on the metrics:
 - **WikiText-103 perplexity is out-of-domain.** The WikiText dataset was not used for training (FineWeb-Edu is a web crawl and was not deduplicated against WikiText). The lm-eval `wikitext103` task in
@@ -68,6 +95,40 @@ transformer blocks + final norm: 40,907,264
 TOTAL trainable parameters: 49,295,872 <= 50,000,000: True
 ```
 
+**Counting the released weights file directly.** In a tied model, the embedding and the output head are one tensor
+stored under two keys. A naive `sum(v.numel() for v in state_dict.values())` counts it twice and prints 57,684,480, which
+looks like it breaks the cap. `count_params.py --ckpt` counts each stored tensor once and checks it against the formula:
+
+```
+$ python count_params.py --ckpt laptop50m-step9000.pt      # the file from the v1.0-step9000 release
+checkpoint: laptop50m-step9000.pt (87 state_dict keys)
+tensors stored under two keys (tied, counted once): [('tok_emb.weight', 'lm_head.weight')]
+naive sum over keys (counts the tied matrix twice): 57,684,480
+unique parameters in the file == config formula (49,295,872): True
+TOTAL trainable parameters: 49,295,872 <= 50,000,000: True
+```
+
+### Ablation: vocabulary vs depth when the cap counts the embedding (small proxy, CPU)
+
+The 16k vocabulary is the main design choice, so we tested it at a smaller scale where four runs fit on a CPU.
+Every run gets the same 8M-parameter cap (embedding counted, head tied), width 192, the same 20.05 MB of FineWeb-Edu
+text (one pass, so every run sees the same bytes) and a BPE tokenizer trained on that text. The vocabulary changes, and the
+depth fills what the embedding leaves. Runs are compared on bits per byte of 205 held-out documents (1.0 MB, the last row group
+of shard 000), which does not depend on the tokenizer.
+[`laptop50m/infrastructure/ablate_vocab.py`](laptop50m/infrastructure/ablate_vocab.py) → [`results/ablation_vocab.json`](results/ablation_vocab.json)
+
+| Vocabulary | Layers | Parameters | Embedding share | Training tokens | Held-out bits per byte |
+|---|---|---|---|---|---|
+| 4,096 | 16 | 7,870,656 | 10% | 5.86M | 1.762 |
+| 8,192 | 14 | 7,771,584 | 20% | 5.16M | 1.750 |
+| **16,384** | 10 | 7,573,440 | 42% | 4.67M | **1.734** |
+| 32,768 | 3 | 7,619,904 | 83% | 4.33M | 1.746 |
+
+In this proxy, 16k was the best of the four. Both extremes lost: a very small vocabulary gives more layers but weaker tokens
+(3.4 bytes per token vs 4.3), and a 32k vocabulary leaves only 3 layers. At full scale (d = 512) the same 16k vocabulary
+takes only 17% of the budget. Limits: one seed per point, a tiny model trained on 20 MB, and gaps of 0.012 to 0.028 bits
+per byte, so we read this as support for the choice, not as proof of an optimum.
+
 ## Training setup
 
 | | |
@@ -97,16 +158,37 @@ gh release download v1.0-step9000 -R Ryugi62/laptop-50m     # laptop50m-step9000
 On 2026-09-28 this printed ARC-Easy acc 0.39478 and PIQA acc 0.56746 in 70 s on the M3 CPU, the same values as the
 table above (measured on the MPS GPU from the training checkpoint).
 
+## Demo: generate text on a CPU
+
+```sh
+.venv/bin/python -m laptop50m.infrastructure.generate_cli --ckpt laptop50m-step9000.pt --tokenizer tokenizer.json \
+    --prompt "The water cycle is" --new-tokens 40
+```
+
+Output on the M3 CPU (temperature 0.7, top-k 40, seed 0):
+
+```
+The water cycle is a major factor in influencing the water cycle. The main role of water is the formation of water and the
+production of water. Water is a source of energy and energy. The water cycle is the
+[40 new tokens in 1.05 s on CPU (4 threads) = 38.1 tok/s, no KV cache]
+[peak process memory 631 MB, weights fp32 197 MB]
+```
+
+The text stays on topic and is grammatical, but it repeats itself and says little. That is what 295M training tokens buy at
+this size, and we show it as it is.
+
 ## Reproduce
 
 ```sh
 python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ./download_data.sh                      # FineWeb-Edu shard 000 (2.15 GB) + WikiText-103 val/test
-.venv/bin/python -m pytest -q           # 23 tests
+.venv/bin/python -m pytest -q           # 30 tests
 ./run_pipeline.sh                       # tokenizer + tokenization + training -> runs/l50m-v1/ckpt.pt
 .venv/bin/python count_params.py --config configs/l50m-v1.json
 .venv/bin/python -m laptop50m.infrastructure.eval_cli --ckpt runs/l50m-v1/ckpt.pt --out results
 .venv/bin/python -m laptop50m.infrastructure.plot_curve runs/l50m-v1/train_log.jsonl results/loss_curve.svg
+baselines/run_pythia70m.sh              # reference point (needs: pip install "transformers>=4.44,<4.57" accelerate)
+.venv/bin/python -m laptop50m.infrastructure.ablate_vocab --vocabs 4096,8192,16384,32768   # ablation (CPU, ≈ 1 h)
 ```
 
 `eval_cli` runs lm-evaluation-harness through a custom `TemplateLM` adapter
@@ -122,9 +204,10 @@ The trained checkpoint (`runs/l50m-v1/ckpt.pt`, 592 MB with optimizer state) is 
 laptop50m/domain/          config + parameter budget, LR schedule (pure Python, no torch)
 laptop50m/application/     training loop, sliding-window perplexity (ports injected)
 laptop50m/adapters/        PyTorch model, memmap token shards, lm-eval adapter
-laptop50m/infrastructure/  CLIs: prepare_data, train_cli, eval_cli, plot_curve, idle gate, pacer
+laptop50m/infrastructure/  CLIs: prepare_data, train_cli, eval_cli, plot_curve, generate_cli, ablate_vocab, idle gate, pacer
 eval_tasks/                lm-eval task config for WikiText-103
-tests/                     acceptance tests AC-1 … AC-15 (see SPEC.md)
+baselines/                 Pythia-70M reference run (evaluation only)
+tests/                     acceptance tests AC-1 … AC-18 (see SPEC.md)
 ```
 
 ## AI tool use (disclosure)
@@ -137,7 +220,8 @@ AI coding assistants are allowed in this hackathon, and we disclose our use in f
   AI-generated training data. The weights were initialised randomly and trained only on FineWeb-Edu text.
   The tokenizer was trained from scratch on the same data.
 - All numbers in this README are copied from script output (`results/eval_l50m-v1.json`, `runs/l50m-v1/train_log.jsonl`,
-  `count_params.py`).
+  `count_params.py`, `results/baselines/pythia-70m.json`, `results/ablation_vocab.json`, `generate_cli`).
+- Pythia-70M appears only as an evaluation reference, run by `baselines/run_pythia70m.sh`. It is not part of training.
 
 ## Research prototype
 
@@ -147,7 +231,7 @@ Its outputs can be wrong and must not be used for any decision.
 ## Licenses
 
 Code: MIT. Data: FineWeb-Edu (ODC-By 1.0), WikiText-103 (CC BY-SA 3.0, evaluation only).
-Evaluation: EleutherAI lm-evaluation-harness (MIT).
+Evaluation: EleutherAI lm-evaluation-harness (MIT). Reference model: EleutherAI Pythia-70M (Apache-2.0), evaluation only.
 
 ## Weights
 Final checkpoint (step 9000, fp32 state_dict, SHA-256 `930c08d5…70ea`) and tokenizer: https://github.com/Ryugi62/laptop-50m/releases/tag/v1.0-step9000

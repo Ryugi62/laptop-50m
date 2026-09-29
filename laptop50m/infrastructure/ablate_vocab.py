@@ -3,7 +3,7 @@
 Same text, same parameter budget, same width, same number of training *bytes*; only the vocabulary changes, and the
 depth fills whatever the embedding leaves. Compared on held-out bits per byte (tokenizer-independent).
 
-    python -m laptop50m.infrastructure.ablate_vocab --vocabs 4096,16384,32768 --budget 8e6 --out results/ablation_vocab.json
+    python -m laptop50m.infrastructure.ablate_vocab --vocabs 4096,8192,16384,32768 --budget 8e6 --out results/ablation_vocab.json
 """
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def run_one(vocab, train_texts, held_texts, held_bytes, a, work):
     t_tok = time.time() - t0
     base = layers_for_budget(vocab, a.d_model, a.n_head, a.ffn, int(a.budget))
     cfg = type(base)(**{**base.to_dict(), "max_seq_len": a.seq})
-    torch.manual_seed(0)
+    torch.manual_seed(a.seed)
     model = GPT(cfg)
     decay, no_decay = [], []
     for n_, p in model.named_parameters():
@@ -62,7 +62,7 @@ def run_one(vocab, train_texts, held_texts, held_bytes, a, work):
     tokens_per_step = a.batch * a.seq
     n_chunks = (len(tr) - 1) // a.seq
     steps = n_chunks // a.batch
-    rng = np.random.default_rng(0)
+    rng = np.random.default_rng(a.seed)
     order = rng.permutation(n_chunks)[: steps * a.batch]
     warmup = max(1, steps // 20)
     t1 = time.time()
@@ -81,7 +81,7 @@ def run_one(vocab, train_texts, held_texts, held_bytes, a, work):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
-        losses.append(float(loss))
+        losses.append(float(loss.detach()))
         if s % 100 == 0:
             print(f"[ablate v={vocab}] step {s}/{steps} loss {float(loss):.3f} {time.time() - t1:.0f}s", flush=True)
     t_train = time.time() - t1
@@ -89,7 +89,7 @@ def run_one(vocab, train_texts, held_texts, held_bytes, a, work):
     nll, n_tok = sliding_window_nll(model, ho, window=a.seq, stride=a.seq // 2, batch_size=16)
     bpb = bits_per_byte(nll, held_bytes)
     n = analytic_param_count(cfg)
-    return {"vocab": vocab, "n_layer": cfg.n_layer, "params": n, "embedding_share": round(vocab * a.d_model / n, 3),
+    return {"vocab": vocab, "seed": a.seed, "n_layer": cfg.n_layer, "params": n, "embedding_share": round(vocab * a.d_model / n, 3),
             "train_bytes_per_token": round(sum(len(t.encode()) + 1 for t in train_texts) / len(tr), 3),
             "train_tokens": int(steps * tokens_per_step), "steps": steps,
             "final_train_loss_last50": round(float(np.mean(losses[-50:])), 4),
@@ -100,7 +100,7 @@ def run_one(vocab, train_texts, held_texts, held_bytes, a, work):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--parquet", default="_data/raw/fineweb_edu_000.parquet")
-    ap.add_argument("--vocabs", default="4096,16384,32768")
+    ap.add_argument("--vocabs", default="4096,8192,16384,32768")
     ap.add_argument("--budget", type=float, default=8e6)
     ap.add_argument("--d-model", type=int, default=192)
     ap.add_argument("--n-head", type=int, default=4)
@@ -111,6 +111,7 @@ def main(argv=None):
     ap.add_argument("--train-bytes", type=float, default=20e6)
     ap.add_argument("--heldout-bytes", type=float, default=1e6)
     ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--seed", type=int, default=0, help="model init + batch order (text and tokenizers are fixed)")
     ap.add_argument("--work", default="_data/ablation")
     ap.add_argument("--out", default="results/ablation_vocab.json")
     a = ap.parse_args(argv)

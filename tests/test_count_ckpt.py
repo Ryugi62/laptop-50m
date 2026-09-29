@@ -9,7 +9,7 @@ def small():
     return ModelConfig(vocab_size=256, d_model=64, n_layer=2, n_head=4, ffn_hidden=176, max_seq_len=32)
 
 
-def test_ac23_bare_state_dict_counts_tied_once(tmp_path):
+def test_ac16_bare_state_dict_counts_tied_once(tmp_path):
     cfg = small()
     p = tmp_path / "w.pt"
     torch.save(GPT(cfg).state_dict(), p)
@@ -19,7 +19,7 @@ def test_ac23_bare_state_dict_counts_tied_once(tmp_path):
     assert ("tok_emb.weight", "lm_head.weight") in r["shared"]
 
 
-def test_ac23_training_checkpoint_with_config(tmp_path):
+def test_ac16_training_checkpoint_with_config(tmp_path):
     cfg = small()
     p = tmp_path / "ck.pt"
     torch.save({"model": GPT(cfg).state_dict(), "model_config": cfg.to_dict(), "step": 3}, p)
