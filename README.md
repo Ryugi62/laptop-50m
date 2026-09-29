@@ -4,9 +4,11 @@ A 49.3M-parameter language model trained **from scratch on one Apple M3 iMac** (
 GIBC V2 Track 01 (TECH: ≤ 50M parameters). The model trained in the background while the machine was in daily use,
 and all compute ran locally at zero cost. Everything in this README can be reproduced with the scripts in this repository.
 
-**In one line:** evaluated with the same lm-evaluation-harness tasks on the same Mac, Laptop-50M is within 0.1 point of
-EleutherAI's Pythia-70M on HellaSwag and 1.9 points higher on ARC-Easy, after about **1/1,450 of Pythia-70M's training
-compute** (1/1,017 of its tokens). It is behind on PIQA, WinoGrande and WikiText perplexity. See [the comparison](#same-harness-same-mac-pythia-70m-as-a-reference-point).
+For scale, we also ran EleutherAI's Pythia-70M through the same harness on the same Mac
+([comparison](#same-harness-same-mac-pythia-70m-as-a-reference-point)). It used about 1,450× our training compute. The two models
+are level on HellaSwag (the gap is inside one standard error), Laptop-50M is 1.9 points higher on ARC-Easy (about two standard
+errors, one run each), and Pythia-70M is ahead on PIQA, WinoGrande and WikiText. Our model is undertrained (about 6 tokens per
+parameter), and that, not the architecture, limits the benchmark scores.
 
 | | |
 |---|---|
@@ -182,7 +184,7 @@ this size, and we show it as it is.
 ```sh
 python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ./download_data.sh                      # FineWeb-Edu shard 000 (2.15 GB) + WikiText-103 val/test
-.venv/bin/python -m pytest -q           # 30 tests
+.venv/bin/python -m pytest -q           # 30 tests (23 when the demo video was recorded)
 ./run_pipeline.sh                       # tokenizer + tokenization + training -> runs/l50m-v1/ckpt.pt
 .venv/bin/python count_params.py --config configs/l50m-v1.json
 .venv/bin/python -m laptop50m.infrastructure.eval_cli --ckpt runs/l50m-v1/ckpt.pt --out results
